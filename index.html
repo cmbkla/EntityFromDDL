@@ -1,0 +1,341 @@
+<html>
+	<head>
+		<style>
+			body {
+				padding: 5px;
+			}
+
+			label {
+				font-weight: bold;
+				display:block;
+			}
+
+			button {
+				display:block;
+			}
+
+			input,
+			textarea {
+				display: block;
+				width: 100%;
+			}
+
+		</style>
+	</head>
+	<body>
+		<div style="width:38%; float:left;">
+			<label>Seq Generator</label>
+			<input class="seq-name" />
+			<br><br>
+			<label>Table CREATE DDL</label>
+			<textarea rows=20 class="columns-input"></textarea>
+			<button class="make-entity-btn">
+				Make entity
+			</button>
+		</div>
+		<div style="float:right; width:58%">
+			<label>Result</label>
+			<textarea rows=20 class="results"></textarea>
+		</div>
+	<script>
+		(function() {
+			var $resultsContainer = document.querySelectorAll('.results')[0];
+
+			document.querySelectorAll('.make-entity-btn')[0].onclick = function (e){
+				e.preventDefault();
+
+				var seqName = document.querySelectorAll('.seq-name')[0].value;
+				if (seqName.length < 1) {
+					alert('Provide the seq generator name');
+					return false;
+				}
+
+				var entityColumns = document.querySelectorAll('.columns-input')[0].value;
+				var rows = entityColumns.split("\n");
+
+				if (rows.length === 0) {
+					alert('Missing CREATE TABLE on first line');
+					return false;
+				}
+				if (rows[0].indexOf("CREATE TABLE") < 0) {
+					alert('Missing CREATE TABLE on first line');
+					return false;
+				}
+
+				var tableName = rows.shift();
+				tableName = tableName.trim().replace("CREATE TABLE ", "");
+				tableName = tableName.split('.');
+				tableName = tableName.pop();
+
+				var imports = [];
+				var columnNames = [];
+				var gettersSetters = [];
+				var hasErrors = false;
+				var errorList = [];
+
+				rows.forEach(function (rawItem, index) {
+					rawItem = rawItem.trim();
+					if (rawItem.length === 0 || rawItem === "(" || rawItem === ");" || rawItem === ")") {
+						return true;
+					}
+
+					item = rawItem.split(" ");
+					if (item.length < 2) {
+						errorList.push('Cannot parse DDL, error with line "'+rawItem+'"');
+						hasErrors = true;
+						return true;
+					}
+
+					if (item[0].length > 30) {
+						errorList.push('Column name "'+item[0]+'" is too long ('+item[0].length+')');
+
+					}
+
+					var propertyName = humps.camelize(item[0].trim().toLowerCase());
+					if (propertyName.length < 2) {
+						errorList.push('Cannot parse DDL, error with line "'+rawItem+'"');
+						hasErrors = true;
+						return true;
+					}
+
+					if (['createdOn', 'createdBy', 'modifiedOn', 'modifiedBy'].indexOf(propertyName) >= 0) {
+						return true;
+					}
+
+					var propertyType = '';
+					var columnProperties = [];
+					var annotations = [];
+					item[1] = item[1].trim();
+					if (item[1].indexOf("NUMBER") > -1 || item[1].indexOf('LONG') > -1) {
+						propertyType = "Long";
+					} else if (item[1].indexOf('VARCHAR') > -1) {
+						var columnTypeParts = item[1].split('(');
+						columnTypeParts = columnTypeParts[1].replace(')', '').replace(',', '');
+						columnProperties.push('length = '+columnTypeParts);
+						annotations.push('@Size(max='+columnTypeParts+')');
+						propertyType = "String";
+					} else if (item[1].indexOf('INT') > -1) {
+						propertyType = "int";
+					} else if (item[1].indexOf("DATE") > -1) {
+						if (imports.indexOf('import java.util.Date;') < 0) {
+							imports.push('import java.util.Date;');
+						}
+						propertyType = "Date";
+					} else {
+						errorList.push('Could not determine Java property type for column "'+item[0]+'" -- type "'+item[1]+'" is not recognized');
+						hasErrors = true;
+						return true;
+					}
+
+					columnNames.push('private '+propertyType+' '+propertyName+';')
+
+					if (item.indexOf('PRIMARY') >= 0) {
+						gettersSetters.push('@Id');
+						gettersSetters.push('@SequenceGenerator(name = "'+seqName+'", sequenceName = "'+seqName+'", allocationSize = 1)');
+						gettersSetters.push('@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "'+seqName+'")');
+					}
+
+					var columnPropertiesString = (
+						columnProperties.length > 0 ?
+							', ' + columnProperties.join(',') : ''
+					);
+					gettersSetters.push('@Column(name="'+item[0]+'"'+columnPropertiesString+')');
+
+					if (annotations.length > 0) {
+						annotations.forEach(function (aitem, aindex) {
+							gettersSetters.push(aitem);
+						});
+					}
+
+					gettersSetters.push('public '+propertyType+' get'+ucFirst(propertyName)+'() {');
+					gettersSetters.push('	return '+propertyName+';');
+					gettersSetters.push('}');
+					gettersSetters.push('public void set'+ucFirst(propertyName)+'('+propertyType+' '+propertyName+') {');
+					gettersSetters.push('	this.'+propertyName+' = '+propertyName+';');
+					gettersSetters.push('}');
+					gettersSetters.push('');
+				});
+
+				if (hasErrors) {
+					$resultsContainer.value = errorList.join("\n\n");
+					return false;
+				}
+
+				var out = [];
+				out.push('package gov.mdch.tpl.entity.ted;');
+				out.push('import gov.mdch.tpl.entity.AbstractUserEditableEntity;');
+				out.push('import javax.validation.constraints.*;');
+				if (imports.length > 0) {
+					out.push(imports.join("\n"));
+				}
+				out.push('');
+				out.push('import javax.persistence.*;');
+				out.push('');
+				out.push('/**');
+				out.push('* Generated from table DDL.');
+				out.push('*/');
+				out.push('@Entity');
+				out.push('@Table(name="'+tableName+'")');
+				out.push('public class '+ucFirst(humps.camelize(tableName.toLowerCase()))+'Entity extends AbstractUserEditableEntity {');
+				out.push('');
+				out.push(columnNames.join("\n"));
+				out.push('');
+				out.push(gettersSetters.join("\n"));
+				out.push('}');
+				$resultsContainer.value = out.join("\n");
+
+			};
+
+
+		})();
+
+
+		// =========
+		// = humps =
+		// =========
+		// Underscore-to-camelCase converter (and vice versa)
+		// for strings and object keys
+
+		// humps is copyright © 2012+ Dom Christie
+		// Released under the MIT license.
+
+
+		;(function(global) {
+
+			var _processKeys = function(convert, obj, options) {
+				if(!_isObject(obj) || _isDate(obj) || _isRegExp(obj) || _isBoolean(obj) || _isFunction(obj)) {
+					return obj;
+				}
+
+				var output,
+					i = 0,
+					l = 0;
+
+				if(_isArray(obj)) {
+					output = [];
+					for(l=obj.length; i<l; i++) {
+						output.push(_processKeys(convert, obj[i], options));
+					}
+				}
+				else {
+					output = {};
+					for(var key in obj) {
+						if(obj.hasOwnProperty(key)) {
+							output[convert(key, options)] = _processKeys(convert, obj[key], options);
+						}
+					}
+				}
+				return output;
+			};
+
+			// String conversion methods
+
+			var separateWords = function(string, options) {
+				options = options || {};
+				var separator = options.separator || '_';
+				var split = options.split || /(?=[A-Z])/;
+
+				return string.split(split).join(separator);
+			};
+
+			var camelize = function(string) {
+				if (_isNumerical(string)) {
+					return string;
+				}
+				string = string.replace(/[\-_\s]+(.)?/g, function(match, chr) {
+					return chr ? chr.toUpperCase() : '';
+				});
+				// Ensure 1st char is always lowercase
+				return string.substr(0, 1).toLowerCase() + string.substr(1);
+			};
+
+			var pascalize = function(string) {
+				var camelized = camelize(string);
+				// Ensure 1st char is always uppercase
+				return camelized.substr(0, 1).toUpperCase() + camelized.substr(1);
+			};
+
+			var decamelize = function(string, options) {
+				return separateWords(string, options).toLowerCase();
+			};
+
+			// Utilities
+			// Taken from Underscore.js
+
+			var toString = Object.prototype.toString;
+
+			var _isFunction = function(obj) {
+				return typeof(obj) === 'function';
+			};
+			var _isObject = function(obj) {
+				return obj === Object(obj);
+			};
+			var _isArray = function(obj) {
+				return toString.call(obj) == '[object Array]';
+			};
+			var _isDate = function(obj) {
+				return toString.call(obj) == '[object Date]';
+			};
+			var _isRegExp = function(obj) {
+				return toString.call(obj) == '[object RegExp]';
+			};
+			var _isBoolean = function(obj) {
+				return toString.call(obj) == '[object Boolean]';
+			};
+
+			// Performant way to determine if obj coerces to a number
+			var _isNumerical = function(obj) {
+				obj = obj - 0;
+				return obj === obj;
+			};
+
+			// Sets up function which handles processing keys
+			// allowing the convert function to be modified by a callback
+			var _processor = function(convert, options) {
+				var callback = options && 'process' in options ? options.process : options;
+
+				if(typeof(callback) !== 'function') {
+					return convert;
+				}
+
+				return function(string, options) {
+					return callback(string, convert, options);
+				}
+			};
+
+			var humps = {
+				camelize: camelize,
+				decamelize: decamelize,
+				pascalize: pascalize,
+				depascalize: decamelize,
+				camelizeKeys: function(object, options) {
+					return _processKeys(_processor(camelize, options), object);
+				},
+				decamelizeKeys: function(object, options) {
+					return _processKeys(_processor(decamelize, options), object, options);
+				},
+				pascalizeKeys: function(object, options) {
+					return _processKeys(_processor(pascalize, options), object);
+				},
+				depascalizeKeys: function () {
+					return this.decamelizeKeys.apply(this, arguments);
+				}
+			};
+
+			if (typeof define === 'function' && define.amd) {
+				define(humps);
+			} else if (typeof module !== 'undefined' && module.exports) {
+				module.exports = humps;
+			} else {
+				global.humps = humps;
+			}
+
+		})(this);
+
+		function ucFirst(string) {
+			return string.charAt(0).toUpperCase() + string.slice(1);
+		}
+
+	</script>
+	</body>
+</html>
