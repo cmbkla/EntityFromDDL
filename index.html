@@ -57,7 +57,7 @@
 					alert('Missing CREATE TABLE on first line');
 					return false;
 				}
-				if (rows[0].indexOf("CREATE TABLE") < 0) {
+				if (rows[0].toUpperCase().indexOf("CREATE TABLE") < 0) {
 					alert('Missing CREATE TABLE on first line');
 					return false;
 				}
