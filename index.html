@@ -105,7 +105,7 @@
 					var propertyType = '';
 					var columnProperties = [];
 					var annotations = [];
-					item[1] = item[1].trim();
+					item[1] = item[1].trim().toUpperCase();
 					if (item[1].indexOf("NUMBER") > -1 || item[1].indexOf('LONG') > -1) {
 						propertyType = "Long";
 					} else if (item[1].indexOf('VARCHAR') > -1) {
