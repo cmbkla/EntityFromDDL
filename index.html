@@ -57,7 +57,7 @@
 					alert('Missing CREATE TABLE on first line');
 					return false;
 				}
-				if (rows[0].indexOf("CREATE TABLE") < 0) {
+				if (rows[0].toUpperCase().indexOf("CREATE TABLE") < 0) {
 					alert('Missing CREATE TABLE on first line');
 					return false;
 				}
@@ -79,7 +79,7 @@
 						return true;
 					}
 
-					item = rawItem.split(" ");
+					item = rawItem.split(/\s+/);
 					if (item.length < 2) {
 						errorList.push('Cannot parse DDL, error with line "'+rawItem+'"');
 						hasErrors = true;
@@ -105,7 +105,7 @@
 					var propertyType = '';
 					var columnProperties = [];
 					var annotations = [];
-					item[1] = item[1].trim();
+					item[1] = item[1].trim().toUpperCase();
 					if (item[1].indexOf("NUMBER") > -1 || item[1].indexOf('LONG') > -1) {
 						propertyType = "Long";
 					} else if (item[1].indexOf('VARCHAR') > -1) {
@@ -113,6 +113,10 @@
 						columnTypeParts = columnTypeParts[1].replace(')', '').replace(',', '');
 						columnProperties.push('length = '+columnTypeParts);
 						annotations.push('@Size(max='+columnTypeParts+')');
+						propertyType = "String";
+					} else if (item[1].indexOf('CHAR') > -1) {
+						columnProperties.push('length = 1');
+						annotations.push('@Size(max=1)');
 						propertyType = "String";
 					} else if (item[1].indexOf('INT') > -1) {
 						propertyType = "int";
