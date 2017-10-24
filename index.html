@@ -114,6 +114,10 @@
 						columnProperties.push('length = '+columnTypeParts);
 						annotations.push('@Size(max='+columnTypeParts+')');
 						propertyType = "String";
+					} else if (item[1].indexOf('CHAR') > -1) {
+						columnProperties.push('length = 1');
+						annotations.push('@Size(max=1)');
+						propertyType = "String";
 					} else if (item[1].indexOf('INT') > -1) {
 						propertyType = "int";
 					} else if (item[1].indexOf("DATE") > -1) {
