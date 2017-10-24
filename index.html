@@ -79,7 +79,7 @@
 						return true;
 					}
 
-					item = rawItem.split(" ");
+					item = rawItem.split(/\s+/);
 					if (item.length < 2) {
 						errorList.push('Cannot parse DDL, error with line "'+rawItem+'"');
 						hasErrors = true;
